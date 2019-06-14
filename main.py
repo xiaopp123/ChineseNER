@@ -39,7 +39,6 @@ flags.DEFINE_string("train_file",   os.path.join("data", "example.train"),  "Pat
 flags.DEFINE_string("dev_file",     os.path.join("data", "example.dev"),    "Path for dev data")
 flags.DEFINE_string("test_file",    os.path.join("data", "example.test"),   "Path for test data")
 
-
 FLAGS = tf.app.flags.FLAGS
 
 def config_model(char_to_id, tag_to_id):
@@ -67,7 +66,7 @@ def train():
     #load 
     train_sentences = load_sentences(FLAGS.train_file, FLAGS.lower, FLAGS.zeros)
 
-#    update_tag_scheme(train_sentence, FLAGS.tag_schema)
+    #update_tag_scheme(train_sentence, FLAGS.tag_schema)
     if not os.path.isfile(FLAGS.map_file):
         if FLAGS.pre_emb:
             dico_chars_trian = char_mapping(train_sentences, FLAGS.lower)
@@ -91,9 +90,9 @@ def train():
 
     config = config_model(char_to_id, tag_to_id)
 
-#tf config
+    #tf config
     tf_config = tf.ConfigProto()
-    tf_config..gpu_options.allow_growth = True
+    tf_config.gpu_options.allow_growth = True
 
     # num of batch
     steps_per_epoch = train_manager.len_data
