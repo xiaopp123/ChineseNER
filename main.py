@@ -1,9 +1,14 @@
 import tensorflow as tf
 import os
+import numpy as np
 from collections import OrderedDict
 import pickle
 from loader import load_sentences, char_mapping, tag_mapping
 from loader import prepare_data, BatchManager
+from loader import load_word2vec, get_logger
+from loader import test_ner, load_config
+from loader import input_from_line
+from model import Model
 
 flags = tf.app.flags
 flags.DEFINE_boolean("clean",       False,      "clean train folder")
@@ -62,9 +67,38 @@ def config_model(char_to_id, tag_to_id):
 
     return config
 
+def evaluate(sess, model, name, data, id_to_tag, logger):
+    logger.info("evaluate:{}".format(name))
+    #返回真实结果[batch, ["char true_label pred_label"]]
+    ner_results = model.evaluate(sess, data, id_to_tag)
+    #print(ner_results)
+    eval_lines = test_ner(ner_results, FLAGS.result_path)
+    print(type(eval_lines))
+    for line in eval_lines:
+        logger.info(line)
+
+    f1 = float(eval_lines[1].strip().split()[-1])
+
+    if name == "dev":
+        best_test_f1 = model.best_dev_f1.eval()
+        if f1 > best_test_f1:
+            tf.assign(model.best_dev_f1, f1).eval()
+            logger.info("new best dev f1 score: {:>.3f}".format(f1))
+
+        return f1 > best_test_f1
+
+    elif name == "test":
+        best_test_f1 = model.best_test_f1.eval()
+        if f1 > best_test_f1:
+            tf.assign(model.best_test_f1, f1).eval()
+            logger.info("new best test f1 score: {:>.3f}".format(f1))
+
+        return f1 > best_test_f1
+
 def train():
     #load 
     train_sentences = load_sentences(FLAGS.train_file, FLAGS.lower, FLAGS.zeros)
+    dev_sentences = load_sentences(FLAGS.dev_file, FLAGS.lower, FLAGS.zeros)
 
     #update_tag_scheme(train_sentence, FLAGS.tag_schema)
     if not os.path.isfile(FLAGS.map_file):
@@ -85,10 +119,14 @@ def train():
     print(tag_to_id)
     #[string, chars, segs, tags]
     train_data = prepare_data(train_sentences, char_to_id, tag_to_id, FLAGS.lower)
+    dev_data = prepare_data(dev_sentences, char_to_id, tag_to_id, FLAGS.lower)
 
     train_manager = BatchManager(train_data, FLAGS.batch_size)
+    dev_manager = BatchManager(dev_data, FLAGS.batch_size)
 
     config = config_model(char_to_id, tag_to_id)
+
+    logger = get_logger(os.path.join("logs", FLAGS.log_file))
 
     #tf config
     tf_config = tf.ConfigProto()
@@ -103,13 +141,48 @@ def train():
         if config["pre_emb"]:
             #read_values取出的值与不加一样
             emb_weight = sess.run(model.char_lookup.read_value())
-            emb_weight = load_vec(config['emb_file'], id_to_char, config['char_dim'], emb_weights)
+            emb_weight = load_word2vec(config['emb_file'], id_to_char, config['char_dim'], emb_weight)
+        print("start training")
+        loss = []
+        for i in range(100):
+            for batch in train_manager.iter_batch(shuffle=True):
+                step, batch_loss = model.run_step(sess, True, batch)
+                loss.append(batch_loss)
+                if step % FLAGS.steps_check == 0:
+                    iteration = step // steps_per_epoch + 1
+                    logger.info("iteration:{} step:{}/{}, NER loss:{:>9.6f}".format(\
+                        iteration, step % steps_per_epoch, steps_per_epoch, np.mean(loss)))
+                    loss = []
+            best = evaluate(sess, model, "dev", dev_manager, id_to_tag, logger)
+            if best:
+                #save_model()
+                model.saver.save(sess, os.path.join(FLAGS.ckpt_path, "ner.ckpt"))
+                logger.info("saved model")
 
+def evaluate_line():
+    """
+    config = load_config(FLAGS.config_file)
+    logger = get_logger(FLAGS.log_file)
 
+    tf_config = tf.ConfigProto()
+    tf_config.gpu_options.allow_growth = True
+    with open(FLAGS.map_file, "rb") as f:
+        char_to_id, id_to_char, tag_to_id, id_to_tag = pickle.load(f)
+    with tf.Session(config=tf_config) as sess:
+        model = Model(config)
+        while True:
+            line = input("请输入测试句子")
+            result = model.evaluate_line(sess, input_from_line(line, char_to_id), id_to_tag)
+            print(result)
+    """
+    pass
+    
 
 def main(_):
-   if FLAGS.train:
-       train()
+    if FLAGS.train:
+        train()
+    else:
+        evaluate_line()
 
 if __name__ == '__main__':
     tf.app.run(main)
