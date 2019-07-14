@@ -14,7 +14,10 @@ def zero_digits(s):
 
 def load_sentences(path, lower=True, zeros=False):
     """
-
+    读取数据
+    path：路径
+    lower: 是否将大写变成小写
+    zeros: 数字统一变成0
     """
     sentences = []
     sentence = []
@@ -26,6 +29,7 @@ def load_sentences(path, lower=True, zeros=False):
             sentence = []
             num += 1
         else:
+            #空格用$代替
             if line[0] == " ":
                 line = "$" + line[1:]
             word = line.split()
@@ -37,6 +41,10 @@ def load_sentences(path, lower=True, zeros=False):
     return sentences
 
 def char_mapping(sentences, lower):
+    '''
+    字符映射函数
+    返回内容：字符次数字典，字符编码字典，编码字符字典
+    '''
     char_dict =  {}
     chars = list()
     for s in sentences:
@@ -57,6 +65,9 @@ def char_mapping(sentences, lower):
     return char_dict, char_to_id, id_to_char
 
 def tag_mapping(sentences):
+    '''
+    label映射函数
+    '''
     char_dict =  {}
     chars = list()
     for s in sentences:

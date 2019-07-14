@@ -183,6 +183,7 @@ class Model(object):
         return: for training it returns steps, loss; for test return length, and logits
         """
         feed_dict = self.create_feed_dict(is_train, batch)
+
         if is_train:
             #训练的过程中，需要更改梯度，第三个即为更改梯度操作
             global_step, loss, _ = sess.run(
@@ -193,6 +194,7 @@ class Model(object):
             lengths, logits = sess.run([self.lengths, self.logits], feed_dict)
 
             return lengths, logits
+
     def decode(self, logits, lengths, matrix):
         """
         logits: [batch, num_steps, num_tags] float32

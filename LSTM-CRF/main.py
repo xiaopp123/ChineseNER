@@ -68,12 +68,17 @@ def config_model(char_to_id, tag_to_id):
     return config
 
 def evaluate(sess, model, name, data, id_to_tag, logger):
+    '''
+    name: dev or trian
+    '''
     logger.info("evaluate:{}".format(name))
     #返回真实结果[batch, ["char true_label pred_label"]]
     ner_results = model.evaluate(sess, data, id_to_tag)
-    #print(ner_results)
+    #print(ner_results) 
+    #返回预测报告
     eval_lines = test_ner(ner_results, FLAGS.result_path)
     print(type(eval_lines))
+
     for line in eval_lines:
         logger.info(line)
 
@@ -96,36 +101,46 @@ def evaluate(sess, model, name, data, id_to_tag, logger):
         return f1 > best_test_f1
 
 def train():
-    #load 
+    #load data
     train_sentences = load_sentences(FLAGS.train_file, FLAGS.lower, FLAGS.zeros)
     dev_sentences = load_sentences(FLAGS.dev_file, FLAGS.lower, FLAGS.zeros)
 
     #update_tag_scheme(train_sentence, FLAGS.tag_schema)
     if not os.path.isfile(FLAGS.map_file):
         if FLAGS.pre_emb:
+            #如果有预训练词表，获取训练集中字符的字符映射表
+            #这里两种写成了一个
             dico_chars_trian = char_mapping(train_sentences, FLAGS.lower)
             dico_chars, char_to_id, id_to_char = dico_chars_trian[0], dico_chars_trian[1], dico_chars_trian[2]
         else:
             dico_chars_trian = char_mapping(train_sentences, FLAGS.lower)
             dico_chars, char_to_id, id_to_char = dico_chars_trian[0], dico_chars_trian[1], dico_chars_trian[2]
+
+        #获取label映射表
         _t, tag_to_id, id_to_tag = tag_mapping(train_sentences)
 
+        #将字符映射表与label映射表保存
         with open(FLAGS.map_file, "wb") as f:
             pickle.dump([char_to_id, id_to_char, tag_to_id, id_to_tag], f)
     else:
+        #如果已经保存就直接读取
         with open(FLAGS.map_file, "rb") as f:
             char_to_id, id_to_char, tag_to_id, id_to_tag = pickle.load(f)
 
     print(tag_to_id)
     #[string, chars, segs, tags]
+    #对原始数据进行编码
     train_data = prepare_data(train_sentences, char_to_id, tag_to_id, FLAGS.lower)
     dev_data = prepare_data(dev_sentences, char_to_id, tag_to_id, FLAGS.lower)
 
+    #对数据划分batch
     train_manager = BatchManager(train_data, FLAGS.batch_size)
     dev_manager = BatchManager(dev_data, FLAGS.batch_size)
 
+    #参数
     config = config_model(char_to_id, tag_to_id)
 
+    #日志文件
     logger = get_logger(os.path.join("logs", FLAGS.log_file))
 
     #tf config
@@ -134,7 +149,9 @@ def train():
 
     # num of batch
     steps_per_epoch = train_manager.len_data
+
     with tf.Session(config=tf_config) as sess:
+        #创建模型
         model = Model(config)
 
         sess.run(tf.global_variables_initializer())
@@ -142,6 +159,7 @@ def train():
             #read_values取出的值与不加一样
             emb_weight = sess.run(model.char_lookup.read_value())
             emb_weight = load_word2vec(config['emb_file'], id_to_char, config['char_dim'], emb_weight)
+
         print("start training")
         loss = []
         for i in range(100):
@@ -153,7 +171,9 @@ def train():
                     logger.info("iteration:{} step:{}/{}, NER loss:{:>9.6f}".format(\
                         iteration, step % steps_per_epoch, steps_per_epoch, np.mean(loss)))
                     loss = []
+
             best = evaluate(sess, model, "dev", dev_manager, id_to_tag, logger)
+
             if best:
                 #save_model()
                 model.saver.save(sess, os.path.join(FLAGS.ckpt_path, "ner.ckpt"))
